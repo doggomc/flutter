@@ -1,40 +1,37 @@
-# Vyse Portal Player — Flutter
+# FreeF1 Cockpit — Flutter
 
-A standalone Flutter desktop client for browsing live categories and channels from an **authorized Xtream-compatible IPTV portal**. The app requests `get_live_categories` and `get_live_streams` from `player_api.php`, then plays live streams with `media_kit`/libmpv.
+A standalone Flutter Windows app styled after the FreeF1 website cockpit. It automatically connects at launch and shows **only** the configured `LIVE | FORMULA 1 F1` category. There are no server, username, or password fields.
 
-## Credentials
+## Features
 
-- The server host is prefilled from the request; username and password fields are blank.
-- You can enter credentials separately or paste a `http://host:port:user:pass` combo into the server field.
-- Credentials remain in memory only and are cleared on disconnect/exit; this project does not persist them.
-- The supplied server uses HTTP, which does not encrypt login requests or streams. Use only a portal you are authorized to access, and avoid reusing that password.
+- Loads the configured Xtream-compatible portal and requests only the exact Formula 1 category.
+- Lists that category's streams with search and channel logos.
+- Plays a selected feed with `media_kit` / native mpv.
+- Theater mode, four-slot Multiview, Race Times, selectable team liveries, and website links.
 
-## Easiest Windows build: GitHub Actions
+## Build the Windows app with GitHub Actions
 
-This project includes `.github/workflows/build-windows.yml`. To build without installing Flutter or Visual Studio locally:
+The GitHub workflow reads credentials from repository Actions secrets; no portal username or password is stored in this source tree. Before running it, add these two repository secrets under **Settings → Secrets and variables → Actions**:
 
-1. Create a GitHub repository and upload the contents of this project to it.
-2. Open the repository's **Actions** tab and choose **Build Windows app**.
-3. Select **Run workflow**. When the job finishes, download the `VysePortalPlayer-Windows-x64` artifact.
+- `PORTAL_USERNAME`
+- `PORTAL_PASSWORD`
 
-GitHub's Windows runner generates the Flutter Windows runner, builds Release, and zips the complete runnable app folder.
+Then:
 
-## Build locally on Windows
+1. Upload/push the contents of this project to the GitHub repository.
+2. Open **Actions** and choose **Build FreeF1 Cockpit (Windows)**.
+3. Select **Run workflow** and wait for it to complete.
+4. Download the **FreeF1-Cockpit-Windows-x64** artifact and extract it.
+5. Run `freef1_cockpit.exe` from the extracted folder; keep the other files beside it.
 
-Install the Flutter stable SDK and Visual Studio 2022 with **Desktop development with C++** and a Windows SDK. Run `build_windows.bat` from this folder. It generates the Windows runner if needed, fetches Flutter dependencies, builds Release, and creates a ZIP under `dist/`.
+The workflow generates the Windows runner, resolves dependencies, analyzes the Dart source, runs the unit tests, builds Release, and uploads the complete runnable app folder.
 
-Manual commands:
+## Local Windows build
 
-```bat
-flutter create --platforms=windows --project-name vyse_portal_player .
-flutter pub get
-flutter build windows --release
-```
+Install Flutter stable and Visual Studio with **Desktop development with C++** and a Windows SDK. Set `PORTAL_USERNAME` and `PORTAL_PASSWORD` in the shell environment, then run `build_windows.bat`.
 
-The Windows build is a folder containing the `.exe` and its required DLLs/resources; distribute the whole folder (or ZIP), not just the executable by itself.
+## Credential and transport warning
 
-## Playback
+The compiled app contains the credentials needed for automatic login. Anyone who receives the executable can potentially recover them, so only share the artifact with people authorized to use the account. Keep the source repository free of literal credentials. The portal uses plain HTTP, which does not encrypt login requests or stream URLs. For a public-facing app, use a private authenticated relay instead.
 
-The app uses `media_kit` and its native video libraries, rather than a browser video tag, so MPEG-TS live streams can be decoded by libmpv. It does not host channels or include portal credentials. Actual access and playback depend on the provider's API, stream availability, and authorization.
-
-This source was prepared in a Linux environment without the Flutter SDK, so it has not been compiled or tested here.
+The source was prepared in a Linux workspace. Analyzer and mocked service tests can run here, but the Windows release build and live playback still need verification on a Windows runner with an authorized account. FreeF1 is independent and is not affiliated with Formula One or the FIA.

@@ -3,241 +3,227 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-class PortalCategory {
-  const PortalCategory({required this.id, required this.name});
+import 'app_config.dart';
 
-  final String id;
-  final String name;
+class PortalException implements Exception {
+  const PortalException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
-class LiveChannel {
-  const LiveChannel({
+class LiveFeed {
+  const LiveFeed({
     required this.id,
     required this.name,
     required this.categoryId,
-    required this.icon,
+    required this.iconUrl,
     required this.extension,
   });
 
   final String id;
   final String name;
   final String categoryId;
-  final String icon;
+  final String iconUrl;
   final String extension;
 }
 
-class PortalAccount {
-  const PortalAccount({
-    required this.username,
-    required this.status,
-    required this.expiry,
-  });
-
-  final String username;
-  final String status;
-  final String expiry;
-}
-
-class ParsedPortalCombo {
-  const ParsedPortalCombo({
-    required this.server,
-    required this.username,
-    required this.password,
-  });
-
-  final String server;
-  final String username;
-  final String password;
-
-  static ParsedPortalCombo? tryParse(String raw) {
-    final match = RegExp(
-      r'^(https?)://([^/:?#]+)(?::(\d{1,5}))?:([^:/?#]+):([^?#]+)$',
-      caseSensitive: false,
-    ).firstMatch(raw.trim());
-    if (match == null) return null;
-    final scheme = match.group(1)!.toLowerCase();
-    final host = match.group(2)!;
-    final port = match.group(3);
-    return ParsedPortalCombo(
-      server: '$scheme://$host${port == null ? '' : ':$port'}',
-      username: match.group(4)!.trim(),
-      password: match.group(5)!.trim(),
-    );
-  }
-}
-
+/// Reads only the configured Formula 1 live category from the fixed portal.
+/// Credentials are never written to preferences or files.
 class XtreamService {
-  XtreamService({http.Client? client}) : _client = client ?? http.Client();
+  XtreamService({http.Client? client, String? username, String? password})
+    : _client = client ?? http.Client(),
+      _username = username ?? AppConfig.portalUsername,
+      _password = password ?? AppConfig.portalPassword;
 
   final http.Client _client;
-  _PortalCredentials? _credentials;
+  final String _username;
+  final String _password;
+  bool _connected = false;
 
-  bool get isConnected => _credentials != null;
+  bool get isConnected => _connected;
 
-  Future<PortalAccount> connect({
-    required String server,
-    required String username,
-    required String password,
-  }) async {
-    final credentials = _PortalCredentials(
-      baseUrl: _normalizeBase(server),
-      username: username.trim(),
-      password: password.trim(),
+  String get _baseUrl =>
+      AppConfig.portalServer.replaceFirst(RegExp(r'/+$'), '');
+
+  Future<void> connect() async {
+    if (_connected) return;
+    if (_username.isEmpty || _password.isEmpty) {
+      throw const PortalException(
+        'Portal credentials were not included in this app build.',
+      );
+    }
+
+    final root = await _request();
+    if (root is! Map) {
+      throw const PortalException(
+        'The portal returned an unexpected login response.',
+      );
+    }
+
+    final rootMap = Map<String, dynamic>.from(root);
+    final rawInfo = rootMap['user_info'];
+    final info = rawInfo is Map ? Map<String, dynamic>.from(rawInfo) : rootMap;
+    final auth = info['auth']?.toString() ?? '';
+    final status = (info['status']?.toString() ?? '').toLowerCase();
+
+    if (auth == '0' ||
+        const {'expired', 'disabled', 'banned', 'inactive'}.contains(status)) {
+      throw const PortalException(
+        'The portal rejected the configured account.',
+      );
+    }
+
+    final accepted = auth == '1' || status == 'active' || rawInfo is Map;
+    if (!accepted) {
+      throw const PortalException(
+        'The portal did not confirm the configured login.',
+      );
+    }
+
+    _connected = true;
+  }
+
+  Future<List<LiveFeed>> loadFormulaOneFeeds() async {
+    if (!_connected) await connect();
+
+    final rawCategories = await _request(action: 'get_live_categories');
+    if (rawCategories is! List) {
+      throw const PortalException(
+        'The portal did not return its live categories.',
+      );
+    }
+
+    Map<String, dynamic>? targetCategory;
+    final targetName = normalizeCategoryName(AppConfig.categoryName);
+    for (final raw in rawCategories) {
+      if (raw is! Map) continue;
+      final category = Map<String, dynamic>.from(raw);
+      final name = normalizeCategoryName(
+        category['category_name']?.toString() ?? '',
+      );
+      if (name == targetName) {
+        targetCategory = category;
+        break;
+      }
+    }
+
+    if (targetCategory == null) {
+      throw const PortalException(
+        'The configured Formula 1 category was not found on the portal.',
+      );
+    }
+
+    final categoryId = targetCategory['category_id']?.toString() ?? '';
+    if (categoryId.isEmpty) {
+      throw const PortalException('The Formula 1 category has no valid ID.');
+    }
+
+    final rawStreams = await _request(
+      action: 'get_live_streams',
+      categoryId: categoryId,
     );
-    if (credentials.username.isEmpty || credentials.password.isEmpty) {
-      throw Exception('Enter the portal username and password.');
+    if (rawStreams is! List) {
+      throw const PortalException(
+        'The portal did not return streams for this category.',
+      );
     }
 
-    // Keep credentials in memory only. Do not persist them in preferences or files.
-    _credentials = credentials;
-    try {
-      final root = await _request();
-      if (root is! Map) throw Exception('Portal returned an unexpected login response.');
-      final rootMap = Map<String, dynamic>.from(root);
-      final rawInfo = rootMap['user_info'];
-      final info = rawInfo is Map
-          ? Map<String, dynamic>.from(rawInfo)
-          : rootMap;
-      final auth = info['auth']?.toString() ?? '';
-      final status = (info['status']?.toString() ?? '').toLowerCase();
-      final accepted = auth == '1' || status == 'active' || rootMap.containsKey('user_info');
-      if (!accepted) throw Exception('The portal did not accept this login.');
+    final feeds = <LiveFeed>[];
+    final seenIds = <String>{};
+    for (final raw in rawStreams) {
+      if (raw is! Map) continue;
+      final item = Map<String, dynamic>.from(raw);
+      final id = item['stream_id']?.toString() ?? item['id']?.toString() ?? '';
+      final itemCategory = item['category_id']?.toString() ?? categoryId;
+      if (id.isEmpty || itemCategory != categoryId || !seenIds.add(id)) {
+        continue;
+      }
 
-      return PortalAccount(
-        username: info['username']?.toString().isNotEmpty == true
-            ? info['username'].toString()
-            : credentials.username,
-        status: info['status']?.toString() ?? 'connected',
-        expiry: _formatExpiry(info['exp_date']?.toString()),
+      var extension = (item['container_extension']?.toString() ?? 'ts')
+          .replaceFirst(RegExp(r'^\.'), '')
+          .trim();
+      if (!RegExp(r'^[A-Za-z0-9]{1,8}$').hasMatch(extension)) {
+        extension = 'ts';
+      }
+
+      feeds.add(
+        LiveFeed(
+          id: id,
+          name:
+              item['name']?.toString() ??
+              item['title']?.toString() ??
+              'Untitled feed',
+          categoryId: categoryId,
+          iconUrl: item['stream_icon']?.toString() ?? '',
+          extension: extension,
+        ),
       );
-    } catch (_) {
-      _credentials = null;
-      rethrow;
     }
+
+    return List.unmodifiable(feeds);
   }
 
-  Future<List<PortalCategory>> loadLiveCategories() async {
-    final result = await _request(action: 'get_live_categories');
-    if (result is! List) throw Exception('The portal did not return a live-category list.');
-    return result.whereType<Map>().map((raw) {
-      final item = Map<String, dynamic>.from(raw);
-      return PortalCategory(
-        id: item['category_id']?.toString() ?? '',
-        name: item['category_name']?.toString() ?? 'Unnamed category',
-      );
-    }).toList(growable: false);
+  String streamUrl(LiveFeed feed) {
+    if (!_connected) throw StateError('Connect to the portal first.');
+    final user = Uri.encodeComponent(_username);
+    final pass = Uri.encodeComponent(_password);
+    final id = Uri.encodeComponent(feed.id);
+    return '$_baseUrl/live/$user/$pass/$id.${feed.extension}';
   }
 
-  Future<List<LiveChannel>> loadLiveChannels() async {
-    final result = await _request(action: 'get_live_streams');
-    if (result is! List) throw Exception('The portal did not return a live-channel list.');
-    return result.whereType<Map>().map((raw) {
-      final item = Map<String, dynamic>.from(raw);
-      final extension = (item['container_extension']?.toString() ?? 'ts')
-          .replaceFirst(RegExp(r'^\.'), '');
-      return LiveChannel(
-        id: item['stream_id']?.toString() ?? item['id']?.toString() ?? '',
-        name: item['name']?.toString() ?? item['title']?.toString() ?? 'Unnamed channel',
-        categoryId: item['category_id']?.toString() ?? '',
-        icon: item['stream_icon']?.toString() ?? '',
-        extension: RegExp(r'^[A-Za-z0-9]+$').hasMatch(extension) ? extension : 'ts',
-      );
-    }).where((channel) => channel.id.isNotEmpty).toList(growable: false);
-  }
+  static String normalizeCategoryName(String value) => value
+      .replaceAll('\u00a0', ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s*\|\s*'), ' | ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .toUpperCase();
 
-  String streamUrl(LiveChannel channel) {
-    final credentials = _credentials;
-    if (credentials == null) throw StateError('Connect to a portal first.');
-    final user = Uri.encodeComponent(credentials.username);
-    final pass = Uri.encodeComponent(credentials.password);
-    final streamId = Uri.encodeComponent(channel.id);
-    return '${credentials.baseUrl}/live/$user/$pass/$streamId.${channel.extension}';
-  }
-
-  void disconnect() {
-    _credentials = null;
-  }
-
-  void dispose() {
-    _credentials = null;
-    _client.close();
-  }
-
-  Future<dynamic> _request({String? action}) async {
-    final credentials = _credentials;
-    if (credentials == null) throw StateError('Connect to a portal first.');
-
-    final endpoint = Uri.parse('${credentials.baseUrl}/player_api.php');
+  Future<dynamic> _request({String? action, String? categoryId}) async {
     final query = <String, String>{
-      'username': credentials.username,
-      'password': credentials.password,
+      'username': _username,
+      'password': _password,
       if (action != null) 'action': action,
+      if (categoryId != null) 'category_id': categoryId,
     };
-    final uri = endpoint.replace(queryParameters: query);
+    final uri = Uri.parse('$_baseUrl/player_api.php')
+        .replace(queryParameters: query);
 
-    http.Response response;
     try {
-      response = await _client
-          .get(uri, headers: const {
-            'Accept': 'application/json,*/*',
-            'User-Agent': 'VLC/3.0.20 LibVLC/3.0.20',
-          })
-          .timeout(const Duration(seconds: 20));
+      final response = await _client
+          .get(
+            uri,
+            headers: const {
+              'Accept': 'application/json,*/*',
+              'User-Agent': 'VLC/3.0.20 LibVLC/3.0.20',
+            },
+          )
+          .timeout(const Duration(seconds: 18));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw PortalException(
+          'The portal returned HTTP ${response.statusCode}.',
+        );
+      }
+
+      try {
+        return jsonDecode(utf8.decode(response.bodyBytes));
+      } on FormatException {
+        throw const PortalException('The portal returned invalid JSON.');
+      }
     } on TimeoutException {
-      throw Exception('Portal request timed out.');
-    } on http.ClientException {
-      throw Exception('Could not reach the portal. Check the address and network connection.');
-    }
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Portal returned HTTP ${response.statusCode}.');
-    }
-    try {
-      return jsonDecode(utf8.decode(response.bodyBytes));
-    } on FormatException {
-      throw Exception('The portal returned a response that was not valid JSON.');
+      throw const PortalException('The portal request timed out. Try again.');
+    } on PortalException {
+      rethrow;
+    } catch (_) {
+      // Avoid echoing a request URL: Xtream URLs contain the configured login.
+      throw const PortalException(
+        'Could not reach the portal. Check the connection and retry.',
+      );
     }
   }
 
-  String _normalizeBase(String raw) {
-    var value = raw.trim();
-    if (value.isEmpty) throw Exception('Enter the portal server address.');
-    if (!value.startsWith('http://') && !value.startsWith('https://')) {
-      value = 'http://$value';
-    }
-
-    final uri = Uri.tryParse(value);
-    if (uri == null || !uri.isAbsolute || uri.host.isEmpty ||
-        (uri.scheme != 'http' && uri.scheme != 'https')) {
-      throw Exception('Enter a valid HTTP or HTTPS server address.');
-    }
-    if (uri.userInfo.isNotEmpty) {
-      throw Exception('Put the username and password in their own fields.');
-    }
-    if (uri.hasQuery || uri.hasFragment) {
-      throw Exception('Use the portal base address, without query parameters.');
-    }
-    return uri.toString().replaceFirst(RegExp(r'/+$'), '');
-  }
-
-  String _formatExpiry(String? raw) {
-    if (raw == null || raw.isEmpty || raw == 'null' || raw == '0') return 'Unlimited';
-    final seconds = int.tryParse(raw);
-    if (seconds == null) return raw;
-    final date = DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true).toLocal();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${date.day.toString().padLeft(2, '0')} ${months[date.month - 1]} ${date.year}';
-  }
-}
-
-class _PortalCredentials {
-  const _PortalCredentials({
-    required this.baseUrl,
-    required this.username,
-    required this.password,
-  });
-
-  final String baseUrl;
-  final String username;
-  final String password;
+  void dispose() => _client.close();
 }
