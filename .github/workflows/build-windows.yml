@@ -1,0 +1,42 @@
+name: Build Windows app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Flutter stable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate the Windows runner
+        run: flutter create --platforms=windows --project-name vyse_portal_player .
+
+      - name: Resolve Flutter packages
+        run: flutter pub get
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Package runnable app folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path 'build/windows/x64/runner/Release/*' -DestinationPath 'dist/VysePortalPlayer-Windows-x64.zip' -Force
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VysePortalPlayer-Windows-x64
+          path: dist/VysePortalPlayer-Windows-x64.zip
+          if-no-files-found: error
