@@ -19,6 +19,10 @@ if not exist windows\CMakeLists.txt (
   call flutter create --platforms=windows --project-name freef1_cockpit .
   if errorlevel 1 goto :fail
 )
+if exist test\widget_test.dart (
+  findstr /C:"Counter increments smoke test" test\widget_test.dart >nul
+  if not errorlevel 1 del /q test\widget_test.dart
+)
 echo Fetching Flutter packages...
 call flutter pub get
 if errorlevel 1 goto :fail
