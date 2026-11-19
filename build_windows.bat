@@ -6,14 +6,6 @@ if errorlevel 1 (
   echo Flutter is not on PATH. Install Flutter, then rerun this script.
   exit /b 1
 )
-if not defined PORTAL_USERNAME (
-  echo Set PORTAL_USERNAME in the environment before building.
-  exit /b 1
-)
-if not defined PORTAL_PASSWORD (
-  echo Set PORTAL_PASSWORD in the environment before building.
-  exit /b 1
-)
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\prepare_project.ps1
 if errorlevel 1 goto :fail
 if not exist windows\CMakeLists.txt (
@@ -35,7 +27,7 @@ echo Running unit tests...
 call flutter test
 if errorlevel 1 goto :fail
 echo Building the Windows release app...
-call flutter build windows --release --dart-define=PORTAL_USERNAME=%PORTAL_USERNAME% --dart-define=PORTAL_PASSWORD=%PORTAL_PASSWORD%
+call flutter build windows --release
 if errorlevel 1 goto :fail
 if not exist dist mkdir dist
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Compress-Archive -Path 'build\windows\x64\runner\Release\*' -DestinationPath 'dist\FreeF1-Cockpit-Windows-x64.zip' -Force"

@@ -8,7 +8,7 @@ import 'package:freef1_cockpit/xtream_service.dart';
 
 void main() {
   test(
-    'requests and returns only streams from the exact F1 category',
+    'loads the exact VIP F1 category and excludes names with three or more hashes',
     () async {
       final requests = <Uri>[];
       final client = MockClient((request) async {
@@ -22,8 +22,8 @@ void main() {
         }
         if (action == 'get_live_categories') {
           return _jsonResponse([
-            {'category_id': '42', 'category_name': 'LIVE | FORMULA 1 F1'},
-            {'category_id': '43', 'category_name': 'LIVE | FORMULA 1 F1 HD'},
+            {'category_id': '42', 'category_name': 'VIP | FORMULA 1'},
+            {'category_id': '43', 'category_name': 'VIP | FORMULA 1 HD'},
           ]);
         }
         if (action == 'get_live_streams') {
@@ -46,6 +46,24 @@ void main() {
               'name': 'Unsafe extension',
               'container_extension': '../ts',
             },
+            {
+              'stream_id': '404',
+              'category_id': '42',
+              'name': 'F1 Alternate ### stream',
+              'container_extension': 'ts',
+            },
+            {
+              'stream_id': '505',
+              'category_id': '42',
+              'name': 'F1 #1 Onboard',
+              'container_extension': 'ts',
+            },
+            {
+              'stream_id': '606',
+              'category_id': '42',
+              'name': 'F1 #1 #2 #3',
+              'container_extension': 'ts',
+            },
           ]);
         }
         return http.Response('{}', 404);
@@ -60,17 +78,22 @@ void main() {
       await service.connect();
       final feeds = await service.loadFormulaOneFeeds();
 
-      expect(feeds.map((feed) => feed.id), ['101', '303']);
+      expect(feeds.map((feed) => feed.id), ['101', '303', '505']);
       expect(feeds.map((feed) => feed.categoryId), everyElement('42'));
+      expect(feeds.map((feed) => feed.name), [
+        'F1 Main Feed',
+        'Unsafe extension',
+        'F1 #1 Onboard',
+      ]);
       expect(feeds.first.extension, 'm3u8');
-      expect(feeds.last.extension, 'ts');
+      expect(feeds[1].extension, 'ts');
       expect(requests, hasLength(3));
       expect(requests[2].queryParameters['category_id'], '42');
       expect(requests[0].queryParameters['username'], 'test-user');
       expect(requests[0].queryParameters['password'], 'test-password');
       expect(
         service.streamUrl(feeds.first),
-        'http://lordstreams.live:80/live/test-user/test-password/101.m3u8',
+        'http://darkvexx.com/live/test-user/test-password/101.m3u8',
       );
     },
   );
@@ -94,8 +117,8 @@ void main() {
 
   test('normalizes spacing around the category separator', () {
     expect(
-      XtreamService.normalizeCategoryName('  live  |  formula 1 f1  '),
-      'LIVE | FORMULA 1 F1',
+      XtreamService.normalizeCategoryName('  vip  |  formula 1  '),
+      'VIP | FORMULA 1',
     );
   });
 }

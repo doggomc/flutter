@@ -43,15 +43,6 @@ jobs:
           "directory=$projectDirectory" >> $env:GITHUB_OUTPUT
           Write-Host "Using FreeF1 project directory: $projectDirectory"
 
-      - name: Verify portal build secrets
-        shell: pwsh
-        env:
-          PORTAL_USERNAME: ${{ secrets.PORTAL_USERNAME }}
-          PORTAL_PASSWORD: ${{ secrets.PORTAL_PASSWORD }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:PORTAL_USERNAME)) { throw 'Add PORTAL_USERNAME in repository Actions secrets.' }
-          if ([string]::IsNullOrWhiteSpace($env:PORTAL_PASSWORD)) { throw 'Add PORTAL_PASSWORD in repository Actions secrets.' }
-
       - name: Prepare project and remove misplaced workflow file
         shell: pwsh
         working-directory: ${{ steps.project.outputs.directory }}
@@ -116,12 +107,8 @@ jobs:
         run: flutter test
 
       - name: Build Windows release
-        shell: pwsh
         working-directory: ${{ steps.project.outputs.directory }}
-        env:
-          PORTAL_USERNAME: ${{ secrets.PORTAL_USERNAME }}
-          PORTAL_PASSWORD: ${{ secrets.PORTAL_PASSWORD }}
-        run: flutter build windows --release "--dart-define=PORTAL_USERNAME=$env:PORTAL_USERNAME" "--dart-define=PORTAL_PASSWORD=$env:PORTAL_PASSWORD"
+        run: flutter build windows --release
 
       - name: Upload the complete runnable app folder
         uses: actions/upload-artifact@v7

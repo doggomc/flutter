@@ -31,7 +31,7 @@ class LiveFeed {
 }
 
 /// Reads only the configured Formula 1 live category from the fixed portal.
-/// Credentials are never written to preferences or files.
+/// Credentials are not persisted by the app at runtime.
 class XtreamService {
   XtreamService({http.Client? client, String? username, String? password})
     : _client = client ?? http.Client(),
@@ -138,9 +138,17 @@ class XtreamService {
       final item = Map<String, dynamic>.from(raw);
       final id = item['stream_id']?.toString() ?? item['id']?.toString() ?? '';
       final itemCategory = item['category_id']?.toString() ?? categoryId;
-      if (id.isEmpty || itemCategory != categoryId || !seenIds.add(id)) {
+      final name =
+          item['name']?.toString() ??
+          item['title']?.toString() ??
+          'Untitled feed';
+      if (id.isEmpty ||
+          itemCategory != categoryId ||
+          seenIds.contains(id) ||
+          RegExp(r'#').allMatches(name).length >= 3) {
         continue;
       }
+      seenIds.add(id);
 
       var extension = (item['container_extension']?.toString() ?? 'ts')
           .replaceFirst(RegExp(r'^\.'), '')
@@ -152,10 +160,7 @@ class XtreamService {
       feeds.add(
         LiveFeed(
           id: id,
-          name:
-              item['name']?.toString() ??
-              item['title']?.toString() ??
-              'Untitled feed',
+          name: name,
           categoryId: categoryId,
           iconUrl: item['stream_icon']?.toString() ?? '',
           extension: extension,

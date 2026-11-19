@@ -1,21 +1,19 @@
 # FreeF1 Cockpit — Flutter
 
-A standalone Flutter Windows app styled after the FreeF1 website cockpit. It launches directly into **Theater mode** and automatically loads only the configured `LIVE | FORMULA 1 F1` category. There are no server, username, or password fields.
+A standalone Flutter Windows app styled after the FreeF1 website cockpit. It launches directly into **Theater mode** and automatically loads only the configured `VIP | FORMULA 1` category. There are no server, username, or password fields.
 
 ## Cockpit features
 
 - Responsive theater-first player with an always-visible **Exit theater** control and Escape shortcut.
 - Four independent Multiview tiles. Each tile can select, clear, retry, and show its own playback state; duplicate feeds are disabled, stale selections are remapped after refresh, and rapid changes are serialized per player.
 - Green **LIVE** badges beside every listed stream, plus a green on-air indicator when playback is active.
+- Loads only the exact `VIP | FORMULA 1` category and omits channel names containing three or more `#` characters.
 - Search, channel artwork, refresh, and links to the FreeF1 website.
 - Race Times and Team Livery controls are intentionally removed.
 
 ## Build the Windows app with GitHub Actions
 
-The GitHub workflow reads credentials from repository Actions secrets; no portal username or password is stored in this source tree. Before running it, add these two repository secrets under **Settings → Secrets and variables → Actions**:
-
-- `PORTAL_USERNAME`
-- `PORTAL_PASSWORD`
+No environment variables or GitHub Actions secrets are needed. The fixed portal address and login are stored in `lib/app_config.dart` and compiled directly into the app.
 
 Then:
 
@@ -33,10 +31,10 @@ Check that `lib/main.dart` is the Dart app entrypoint and starts with Dart impor
 
 ## Local Windows build
 
-Install Flutter stable and Visual Studio with **Desktop development with C++** and a Windows SDK. Set `PORTAL_USERNAME` and `PORTAL_PASSWORD` in the shell environment, then run `build_windows.bat`.
+Install Flutter stable and Visual Studio with **Desktop development with C++** and a Windows SDK, then run `build_windows.bat`. No login variables need to be set.
 
 ## Credential and transport warning
 
-The compiled app contains the credentials needed for automatic login. Anyone who receives the executable can potentially recover them, so only share the artifact with people authorized to use the account. Keep the source repository free of literal credentials. The portal uses plain HTTP, which does not encrypt login requests or stream URLs. For a public-facing app, use a private authenticated relay instead.
+The portal login is hardcoded in `lib/app_config.dart` and recoverable from both the source and compiled app. Anyone who can access this repository or executable can use the account. If the repository is public, the login is public too; rotate it if that is not intended. The portal uses plain HTTP, which does not encrypt login requests or stream URLs. For a public-facing app, use a private authenticated relay instead.
 
 Analyzer and mocked service tests pass in the Linux workspace. The Windows release build and live playback still need verification on a Windows runner with an authorized account. FreeF1 is independent and is not affiliated with Formula One or the FIA.

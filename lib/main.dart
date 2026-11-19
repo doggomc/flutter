@@ -646,6 +646,10 @@ class _CockpitPageState extends State<CockpitPage> {
 
   Widget _buildPlayerCard({bool theater = false}) {
     final active = _activeFeed;
+    final categoryRoute = AppConfig.categoryName
+        .toUpperCase()
+        .replaceAll(RegExp(r'\s*\|\s*'), '/')
+        .replaceAll(RegExp(r'\s+'), '-');
     return Container(
       decoration: BoxDecoration(
         color: Colors.black,
@@ -687,8 +691,8 @@ class _CockpitPageState extends State<CockpitPage> {
                 Expanded(
                   child: Text(
                     active == null
-                        ? 'FREEF1://LIVE/FORMULA-1'
-                        : 'FREEF1://LIVE/FORMULA-1/${active.id}',
+                        ? 'FREEF1://$categoryRoute'
+                        : 'FREEF1://$categoryRoute/${active.id}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(

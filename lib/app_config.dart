@@ -1,13 +1,12 @@
-/// Fixed, app-wide configuration for the FreeF1 Cockpit client.
+/// App-wide configuration for FreeF1 Cockpit.
 ///
-/// The username and password are provided at build time with Dart defines so
-/// they are not stored in a public source repository. They are still embedded
-/// in the compiled app and may be recovered by anyone who receives it.
+/// The portal login is compiled into the application and can be recovered from
+/// the source or any built app.
 abstract final class AppConfig {
-  static const portalServer = 'http://lordstreams.live:80';
-  static const portalUsername = String.fromEnvironment('PORTAL_USERNAME');
-  static const portalPassword = String.fromEnvironment('PORTAL_PASSWORD');
-  static const categoryName = 'LIVE | FORMULA 1 F1';
+  static const portalServer = 'http://darkvexx.com';
+  static const portalUsername = '43A533J';
+  static const portalPassword = 'F18Y4JG';
+  static const categoryName = 'VIP | FORMULA 1';
   static const season = 2026;
   static const website = 'https://freef1-live.vercel.app';
 }
