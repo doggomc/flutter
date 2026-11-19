@@ -6,18 +6,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: freef1-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-release:
     runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
       - name: Check out source
         uses: actions/checkout@v7
-
-      - name: Install Flutter stable
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
 
       - name: Locate FreeF1 Flutter project
         id: project
@@ -37,7 +38,7 @@ jobs:
             }
           }
           if ($null -eq $projectDirectory) {
-            throw 'Could not find the FreeF1 pubspec.yaml at the repository root or in freef1_cockpit_flutter/. Make sure the project files were copied into the repository.'
+            throw 'Could not find the FreeF1 pubspec.yaml at the repository root or in freef1_cockpit_flutter/. Copy the project files from the source ZIP and keep the workflow at repository-root .github/workflows/.'
           }
           "directory=$projectDirectory" >> $env:GITHUB_OUTPUT
           Write-Host "Using FreeF1 project directory: $projectDirectory"
@@ -51,9 +52,44 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:PORTAL_USERNAME)) { throw 'Add PORTAL_USERNAME in repository Actions secrets.' }
           if ([string]::IsNullOrWhiteSpace($env:PORTAL_PASSWORD)) { throw 'Add PORTAL_PASSWORD in repository Actions secrets.' }
 
-      - name: Generate the Windows runner
+      - name: Prepare project and remove misplaced workflow file
+        shell: pwsh
         working-directory: ${{ steps.project.outputs.directory }}
-        run: flutter create --platforms=windows --project-name freef1_cockpit .
+        run: pwsh -NoProfile -File scripts/prepare_project.ps1
+
+      - name: Configure Dart package cache
+        id: pub-cache
+        shell: pwsh
+        run: |
+          $cachePath = Join-Path $env:RUNNER_TEMP 'pub-cache'
+          New-Item -ItemType Directory -Force -Path $cachePath | Out-Null
+          "path=$cachePath" >> $env:GITHUB_OUTPUT
+          "PUB_CACHE=$cachePath" >> $env:GITHUB_ENV
+
+      - name: Restore Dart package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pub-cache.outputs.path }}
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Install Flutter stable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate the Windows runner when needed
+        shell: pwsh
+        working-directory: ${{ steps.project.outputs.directory }}
+        run: |
+          if (Test-Path 'windows/CMakeLists.txt') {
+            Write-Host 'Windows runner already exists; skipping flutter create.'
+          } else {
+            flutter create --platforms=windows --project-name freef1_cockpit --no-pub .
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Remove generated Flutter counter test
         shell: pwsh
@@ -63,7 +99,7 @@ jobs:
           if (Test-Path $sampleTest) {
             $contents = Get-Content $sampleTest -Raw
             if ($contents.Contains('Counter increments smoke test') -and $contents.Contains('MyApp')) {
-              Remove-Item $sampleTest
+              Remove-Item $sampleTest -Force
             }
           }
 

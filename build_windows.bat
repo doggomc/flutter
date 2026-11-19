@@ -14,9 +14,11 @@ if not defined PORTAL_PASSWORD (
   echo Set PORTAL_PASSWORD in the environment before building.
   exit /b 1
 )
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\prepare_project.ps1
+if errorlevel 1 goto :fail
 if not exist windows\CMakeLists.txt (
   echo Generating the Windows Flutter runner...
-  call flutter create --platforms=windows --project-name freef1_cockpit .
+  call flutter create --platforms=windows --project-name freef1_cockpit --no-pub .
   if errorlevel 1 goto :fail
 )
 if exist test\widget_test.dart (

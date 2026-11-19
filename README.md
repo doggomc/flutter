@@ -25,7 +25,11 @@ Then:
 4. Download the **FreeF1-Cockpit-Windows-x64** artifact and extract it.
 5. Run `freef1_cockpit.exe` from the extracted folder; keep the other files beside it.
 
-The workflow generates the Windows runner, removes Flutter's generated counter-test, resolves dependencies, analyzes the Dart source, runs the unit tests, builds Release, and uploads the complete runnable app folder.
+The workflow caches Flutter and Dart packages between runs, skips Windows-runner generation if it already exists, removes Flutter's generated counter-test, then resolves dependencies, analyzes the Dart source, runs the unit tests, builds Release, and uploads the complete runnable app folder.
+
+### If `flutter analyze` reports hundreds of errors at `main.dart:1`
+
+Check that `lib/main.dart` is the Dart app entrypoint and starts with Dart imports. The Actions YAML starts with `name: Build FreeF1 Cockpit (Windows)` and belongs only at `.github/workflows/build-windows.yml`. A stray root-level `main.dart` containing that workflow is automatically removed by CI and by `build_windows.bat`. To fix a local checkout before running `flutter analyze`, run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\prepare_project.ps1`. If `lib/main.dart` itself contains YAML, overwrite it with the Dart file from this source package.
 
 ## Local Windows build
 
