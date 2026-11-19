@@ -11,7 +11,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app_config.dart';
-import 'race_schedule.dart';
 import 'xtream_service.dart';
 
 const _ink = Color(0xFF08090A);
@@ -23,21 +22,6 @@ const _f1Red = Color(0xFFE10600);
 const _green = Color(0xFF00D57E);
 const _line = Color(0x2EFFFFFF);
 const _playerAgent = 'VLC/3.0.20 LibVLC/3.0.20';
-
-const _teamColors = <_LiveryOption>[
-  _LiveryOption('FreeF1 Red', Color(0xFFE10600)),
-  _LiveryOption('McLaren', Color(0xFFFF8000)),
-  _LiveryOption('Ferrari', Color(0xFFDC0000)),
-  _LiveryOption('Red Bull', Color(0xFF1E41FF)),
-  _LiveryOption('Mercedes', Color(0xFF00D2BE)),
-  _LiveryOption('Williams', Color(0xFF005AFF)),
-  _LiveryOption('Aston Martin', Color(0xFF006F62)),
-  _LiveryOption('Alpine', Color(0xFFFF0080)),
-  _LiveryOption('Haas', Color(0xFFB6BABD)),
-  _LiveryOption('Audi', Color(0xFFE62213)),
-  _LiveryOption('Cadillac', Color(0xFFB4A07A)),
-  _LiveryOption('Racing Bulls', Color(0xFF6692FF)),
-];
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,6 +35,7 @@ void main() {
         window.setSize(const Size(1500, 940).toNative(), false);
         window.minimumSize = const Size(980, 680).toNative();
         window.center();
+        window.isFullScreen = true;
       }
     } catch (_) {
       // Keep the in-app layout if native window setup is unavailable.
@@ -123,10 +108,10 @@ class _CockpitPageState extends State<CockpitPage> {
   bool _loadingFeeds = false;
   bool _loadingPlayback = false;
   bool _isPlaying = false;
-  bool _theaterMode = false;
+  bool _theaterMode = true;
   bool _showTheaterSources = true;
   bool _multiView = false;
-  Color _livery = _f1Red;
+  bool _switchingMultiView = false;
   int _playToken = 0;
 
   @override
@@ -291,27 +276,39 @@ class _CockpitPageState extends State<CockpitPage> {
   }
 
   Future<void> _toggleMultiView() async {
-    if (_multiView) {
-      final resume = _activeFeed;
-      setState(() => _multiView = false);
-      if (resume != null) {
-        await Future<void>.delayed(const Duration(milliseconds: 220));
-        await _selectFeed(resume);
-      }
-      return;
-    }
+    if (_switchingMultiView) return;
+    setState(() => _switchingMultiView = true);
 
     try {
-      await _player.stop();
-    } catch (_) {}
-    if (!mounted) return;
-    setState(() {
-      _multiView = true;
-      _loadingPlayback = false;
-      _isPlaying = false;
-      _playerNote =
-          'Multiview · each tile can use an additional portal connection.';
-    });
+      if (_multiView) {
+        final resume = _activeFeed;
+        setState(() {
+          _multiView = false;
+          _loadingPlayback = false;
+          _isPlaying = false;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 220));
+        if (resume != null && mounted) {
+          await _selectFeed(resume);
+        }
+        return;
+      }
+
+      // Invalidate a pending single-player open before switching the stage.
+      ++_playToken;
+      try {
+        await _player.stop();
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _multiView = true;
+        _loadingPlayback = false;
+        _isPlaying = false;
+        _playerNote = 'Choose a source in each tile · up to four feeds.';
+      });
+    } finally {
+      if (mounted) setState(() => _switchingMultiView = false);
+    }
   }
 
   Future<void> _openWebsite(String path) async {
@@ -330,29 +327,13 @@ class _CockpitPageState extends State<CockpitPage> {
     );
   }
 
-  Future<void> _showRaceTimes() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) => const RaceTimesDialog(year: AppConfig.season),
-    );
-  }
-
-  Future<void> _chooseLivery() async {
-    final selected = await showDialog<_LiveryOption>(
-      context: context,
-      builder: (context) => _LiveryDialog(current: _livery),
-    );
-    if (selected == null || !mounted) return;
-    setState(() => _livery = selected.color);
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: _livery,
+        seedColor: _f1Red,
         brightness: Brightness.dark,
       ),
       scaffoldBackgroundColor: _ink,
@@ -502,7 +483,7 @@ class _CockpitPageState extends State<CockpitPage> {
       ),
       child: Row(
         children: [
-          _FreeF1Mark(color: _livery, size: 32),
+          const _FreeF1Mark(color: _f1Red, size: 32),
           const SizedBox(width: 10),
           const Text(
             'FreeF1',
@@ -518,8 +499,8 @@ class _CockpitPageState extends State<CockpitPage> {
           const SizedBox(width: 13),
           Text(
             theater ? 'THEATER' : 'COCKPIT',
-            style: TextStyle(
-              color: _livery,
+            style: const TextStyle(
+              color: _f1Red,
               fontSize: 10,
               fontWeight: FontWeight.w800,
               letterSpacing: 2.0,
@@ -580,11 +561,11 @@ class _CockpitPageState extends State<CockpitPage> {
                   width: 7,
                   height: 7,
                   decoration: BoxDecoration(
-                    color: _livery,
+                    color: _f1Red,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: _livery.withAlpha(110),
+                        color: _f1Red.withAlpha(110),
                         blurRadius: 12,
                         spreadRadius: 2,
                       ),
@@ -597,8 +578,8 @@ class _CockpitPageState extends State<CockpitPage> {
             ),
             const SizedBox(height: 10),
             RichText(
-              text: TextSpan(
-                style: const TextStyle(
+              text: const TextSpan(
+                style: TextStyle(
                   color: _text,
                   fontSize: 42,
                   fontWeight: FontWeight.w900,
@@ -607,10 +588,10 @@ class _CockpitPageState extends State<CockpitPage> {
                   height: 1,
                 ),
                 children: [
-                  const TextSpan(text: 'THE '),
+                  TextSpan(text: 'THE '),
                   TextSpan(
                     text: 'COCKPIT',
-                    style: TextStyle(color: _livery),
+                    style: TextStyle(color: _f1Red),
                   ),
                 ],
               ),
@@ -635,7 +616,7 @@ class _CockpitPageState extends State<CockpitPage> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.live_tv_rounded, size: 15, color: _livery),
+              const Icon(Icons.live_tv_rounded, size: 15, color: _f1Red),
               const SizedBox(width: 8),
               Text(
                 '${_feeds.length} FEED${_feeds.length == 1 ? '' : 'S'}',
@@ -677,7 +658,7 @@ class _CockpitPageState extends State<CockpitPage> {
             offset: Offset(0, 18),
           ),
           BoxShadow(
-            color: _livery.withAlpha(25),
+            color: _f1Red.withAlpha(25),
             blurRadius: 38,
             spreadRadius: 1,
           ),
@@ -701,7 +682,7 @@ class _CockpitPageState extends State<CockpitPage> {
             ),
             child: Row(
               children: [
-                _PulseDot(color: _livery),
+                const _PulseDot(color: _f1Red),
                 const SizedBox(width: 9),
                 Expanded(
                   child: Text(
@@ -724,9 +705,13 @@ class _CockpitPageState extends State<CockpitPage> {
                       ? 'MULTIVIEW'
                       : active == null
                       ? 'STANDBY'
-                      : 'LIVE',
-                  active: active != null || _multiView,
-                  accent: _livery,
+                      : _isPlaying
+                      ? 'LIVE'
+                      : _loadingPlayback
+                      ? 'CONNECTING'
+                      : 'READY',
+                  active: _isPlaying || _multiView,
+                  accent: _f1Red,
                 ),
                 if (active != null && !_multiView) ...[
                   const SizedBox(width: 7),
@@ -762,7 +747,7 @@ class _CockpitPageState extends State<CockpitPage> {
           MultiViewPanel(
             feeds: _feeds,
             service: _service,
-            accent: _livery,
+            accent: _f1Red,
             initialFeed: _activeFeed,
           )
         else
@@ -793,13 +778,17 @@ class _CockpitPageState extends State<CockpitPage> {
               height: 58,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _livery.withAlpha(27),
-                border: Border.all(color: _livery.withAlpha(100)),
+                color: _f1Red.withAlpha(27),
+                border: Border.all(color: _f1Red.withAlpha(100)),
                 boxShadow: [
-                  BoxShadow(color: _livery.withAlpha(30), blurRadius: 24),
+                  BoxShadow(color: _f1Red.withAlpha(30), blurRadius: 24),
                 ],
               ),
-              child: Icon(Icons.play_arrow_rounded, size: 34, color: _livery),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                size: 34,
+                color: _f1Red,
+              ),
             ),
             const SizedBox(height: 15),
             const Text(
@@ -824,9 +813,9 @@ class _CockpitPageState extends State<CockpitPage> {
     ),
   );
 
-  Widget _buildLoadingOverlay() => Positioned.fill(
+  Widget _buildLoadingOverlay() => const Positioned.fill(
     child: ColoredBox(
-      color: const Color(0x90000000),
+      color: Color(0x90000000),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -834,13 +823,10 @@ class _CockpitPageState extends State<CockpitPage> {
             SizedBox(
               width: 28,
               height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.3,
-                color: _livery,
-              ),
+              child: CircularProgressIndicator(strokeWidth: 2.3, color: _f1Red),
             ),
-            const SizedBox(height: 13),
-            const Text(
+            SizedBox(height: 13),
+            Text(
               'Establishing feed…',
               style: TextStyle(color: _text, fontSize: 12),
             ),
@@ -899,7 +885,7 @@ class _CockpitPageState extends State<CockpitPage> {
   );
 
   Widget _buildActionBar({bool theater = false}) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
     decoration: BoxDecoration(
       gradient: const LinearGradient(
         begin: Alignment.topLeft,
@@ -920,40 +906,28 @@ class _CockpitPageState extends State<CockpitPage> {
       builder: (context, constraints) {
         final info = _buildNowPlayingInfo();
         final actions = Wrap(
-          spacing: 7,
-          runSpacing: 7,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             _ActionButton(
               icon: Icons.grid_view_rounded,
-              label: 'Multiview',
-              accent: _livery,
+              label: _multiView ? 'Exit multiview' : 'Multiview',
+              accent: _f1Red,
               selected: _multiView,
-              onPressed: _toggleMultiView,
+              onPressed: _switchingMultiView ? null : _toggleMultiView,
             ),
             _ActionButton(
               icon: theater
                   ? Icons.fullscreen_exit_rounded
                   : Icons.fullscreen_rounded,
-              label: theater ? 'Exit theater' : 'Theater',
-              accent: _livery,
+              label: theater ? 'Exit theater' : 'Theater mode',
+              accent: _f1Red,
               onPressed: _toggleTheater,
-            ),
-            _ActionButton(
-              icon: Icons.schedule_rounded,
-              label: 'Race Times',
-              accent: _livery,
-              onPressed: _showRaceTimes,
-            ),
-            _ActionButton(
-              icon: Icons.palette_outlined,
-              label: 'Team Livery',
-              accent: _livery,
-              onPressed: _chooseLivery,
             ),
           ],
         );
 
-        if (constraints.maxWidth < 850) {
+        if (constraints.maxWidth < 700) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [info, const SizedBox(height: 12), actions],
@@ -974,7 +948,7 @@ class _CockpitPageState extends State<CockpitPage> {
 
   Widget _buildNowPlayingInfo() => Row(
     children: [
-      _PulseDot(color: _activeFeed == null ? _dim : _livery, size: 8),
+      _PulseDot(color: _activeFeed == null ? _dim : _f1Red, size: 8),
       const SizedBox(width: 10),
       Expanded(
         child: Column(
@@ -1074,7 +1048,7 @@ class _CockpitPageState extends State<CockpitPage> {
                 ],
               ),
             ),
-            _CountPill('${_feeds.length} FEEDS', accent: _livery),
+            _CountPill('${_feeds.length} FEEDS', accent: _f1Red),
           ],
         ),
         const SizedBox(height: 14),
@@ -1099,7 +1073,7 @@ class _CockpitPageState extends State<CockpitPage> {
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            _CategoryPill(accent: _livery),
+            const _CategoryPill(accent: _f1Red),
             Text(
               _loadError == null
                   ? 'Showing only this category'
@@ -1192,7 +1166,7 @@ class _CockpitPageState extends State<CockpitPage> {
       message: _loadError ?? 'Try again in a moment.',
       actionLabel: 'Retry',
       onAction: _loadingFeeds ? null : _loadFeeds,
-      accent: _livery,
+      accent: _f1Red,
     ),
   );
 
@@ -1211,7 +1185,7 @@ class _CockpitPageState extends State<CockpitPage> {
               _searchController.clear();
               setState(() => _searchText = '');
             },
-      accent: _livery,
+      accent: _f1Red,
     ),
   );
 
@@ -1219,7 +1193,7 @@ class _CockpitPageState extends State<CockpitPage> {
     final selected = !_multiView && _activeFeed?.id == feed.id;
     final icon = feed.iconUrl.trim();
     return Material(
-      color: selected ? _livery.withAlpha(34) : const Color(0x14FFFFFF),
+      color: selected ? _f1Red.withAlpha(34) : const Color(0x14FFFFFF),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -1233,13 +1207,11 @@ class _CockpitPageState extends State<CockpitPage> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: selected
-                  ? _livery.withAlpha(190)
-                  : const Color(0x20FFFFFF),
+              color: selected ? _f1Red.withAlpha(190) : const Color(0x20FFFFFF),
               width: selected ? 1.2 : 1,
             ),
             boxShadow: selected
-                ? [BoxShadow(color: _livery.withAlpha(24), blurRadius: 17)]
+                ? [BoxShadow(color: _f1Red.withAlpha(24), blurRadius: 17)]
                 : null,
           ),
           child: Row(
@@ -1247,7 +1219,7 @@ class _CockpitPageState extends State<CockpitPage> {
               _FeedArtwork(
                 url: icon,
                 name: feed.name,
-                accent: _livery,
+                accent: _f1Red,
                 compact: compact,
               ),
               SizedBox(width: compact ? 8 : 10),
@@ -1256,28 +1228,42 @@ class _CockpitPageState extends State<CockpitPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      feed.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _text,
-                        fontSize: compact ? 10 : 11,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            feed.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: _text,
+                              fontSize: compact ? 10 : 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _LiveStreamBadge(compact: compact),
+                      ],
                     ),
                     const SizedBox(height: 5),
                     Row(
                       children: [
-                        _TinyDot(color: selected ? _livery : _green),
+                        Icon(
+                          selected
+                              ? Icons.graphic_eq_rounded
+                              : Icons.play_circle_outline_rounded,
+                          color: selected ? _green : _muted,
+                          size: 12,
+                        ),
                         const SizedBox(width: 5),
                         Text(
-                          selected ? 'NOW PLAYING' : 'LIVE FEED',
+                          selected ? 'NOW PLAYING' : 'FORMULA 1 CHANNEL',
                           style: TextStyle(
-                            color: selected ? _livery : _muted,
+                            color: selected ? _green : _muted,
                             fontSize: 8,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 0.75,
+                            letterSpacing: 0.65,
                           ),
                         ),
                       ],
@@ -1288,7 +1274,7 @@ class _CockpitPageState extends State<CockpitPage> {
               const SizedBox(width: 5),
               Icon(
                 selected ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
-                color: selected ? _livery : _dim,
+                color: selected ? _green : _dim,
                 size: compact ? 17 : 19,
               ),
             ],
@@ -1314,7 +1300,7 @@ class _CockpitPageState extends State<CockpitPage> {
             ? 'Playback is active.'
             : 'Connecting to the selected source.',
         icon: Icons.sensors_rounded,
-        accent: _livery,
+        accent: _f1Red,
       ),
       const SizedBox(height: 13),
       _SideCard(
@@ -1324,7 +1310,7 @@ class _CockpitPageState extends State<CockpitPage> {
             ? 'Loading the single configured category…'
             : '${_feeds.length} channel${_feeds.length == 1 ? '' : 's'} available.',
         icon: Icons.live_tv_rounded,
-        accent: _livery,
+        accent: _f1Red,
       ),
       const SizedBox(height: 13),
       _SideLinkCard(
@@ -1405,7 +1391,7 @@ class _CockpitPageState extends State<CockpitPage> {
                   ],
                 ),
               ),
-              _CountPill('${_feeds.length}', accent: _livery),
+              _CountPill('${_feeds.length}', accent: _f1Red),
             ],
           ),
         ),
@@ -1427,7 +1413,7 @@ class _CockpitPageState extends State<CockpitPage> {
                       message: _loadError!,
                       actionLabel: 'Retry',
                       onAction: _loadFeeds,
-                      accent: _livery,
+                      accent: _f1Red,
                     ),
                   ),
                 )
@@ -1446,11 +1432,11 @@ class _CockpitPageState extends State<CockpitPage> {
                       _buildFeedTile(_visibleFeeds[index], compact: true),
                 ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(13, 7, 13, 12),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(13, 7, 13, 12),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: _CategoryPill(accent: _livery, compact: true),
+            child: _CategoryPill(accent: _f1Red, compact: true),
           ),
         ),
       ],
@@ -1509,74 +1495,173 @@ class _MultiViewPanelState extends State<MultiViewPanel> {
   @override
   void initState() {
     super.initState();
-    if (widget.initialFeed != null && widget.feeds.isNotEmpty) {
-      unawaited(_select(0, widget.initialFeed));
+    final firstFeed = widget.initialFeed;
+    if (firstFeed != null && widget.feeds.isNotEmpty) {
+      unawaited(_select(0, firstFeed));
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant MultiViewPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final missingSlots = <int>[];
+    for (var index = 0; index < _slots.length; index++) {
+      final selected = _slots[index].feed;
+      if (selected == null) continue;
+      LiveFeed? replacement;
+      for (final feed in widget.feeds) {
+        if (feed.id == selected.id) {
+          replacement = feed;
+          break;
+        }
+      }
+      if (replacement == null) {
+        missingSlots.add(index);
+      } else {
+        // Rebind the dropdown value to the refreshed feed object by ID.
+        _slots[index].feed = replacement;
+      }
+    }
+    if (missingSlots.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        for (final index in missingSlots) {
+          unawaited(_select(index, null));
+        }
+      });
     }
   }
 
   @override
   void dispose() {
     for (final slot in _slots) {
+      ++slot.requestToken;
+      unawaited(slot.playingSubscription?.cancel());
+      unawaited(slot.errorSubscription?.cancel());
       final player = slot.player;
       if (player != null) unawaited(player.dispose());
     }
     super.dispose();
   }
 
+  void _ensurePlayer(_PlayerSlot slot) {
+    if (slot.player != null) return;
+    final player = Player();
+    slot.player = player;
+    slot.controller = VideoController(player);
+    slot.playingSubscription = player.stream.playing.listen((playing) {
+      if (!mounted || slot.playing == playing) return;
+      setState(() {
+        slot.playing = playing;
+        if (playing) {
+          slot.loading = false;
+          slot.error = null;
+        }
+      });
+    });
+    slot.errorSubscription = player.stream.error.listen((_) {
+      if (!mounted || slot.feed == null) return;
+      setState(() {
+        slot.loading = false;
+        slot.playing = false;
+        slot.error = 'Stream unavailable. Retry or choose another feed.';
+      });
+    });
+  }
+
+  bool _isUsedElsewhere(int index, LiveFeed feed) => _slots.asMap().entries.any(
+    (entry) => entry.key != index && entry.value.feed?.id == feed.id,
+  );
+
   Future<void> _select(int index, LiveFeed? feed) async {
     final slot = _slots[index];
-    slot.feed = feed;
-    slot.error = null;
-
-    if (feed == null) {
-      slot.loading = false;
-      try {
-        await slot.player?.stop();
-      } catch (_) {}
+    if (feed != null && _isUsedElsewhere(index, feed)) {
+      final usedBy = _slots.indexWhere((item) => item.feed?.id == feed.id);
+      slot.error = 'Already selected in tile ${usedBy + 1}.';
       if (mounted) setState(() {});
       return;
     }
 
-    slot.player ??= Player();
-    slot.controller ??= VideoController(slot.player!);
-    slot.loading = true;
+    final token = ++slot.requestToken;
+    slot.feed = feed;
+    slot.error = null;
+    slot.loading = feed != null;
+    slot.playing = false;
+    if (feed != null) _ensurePlayer(slot);
     if (mounted) setState(() {});
 
-    try {
-      await slot.player!.open(
-        Media(
-          widget.service.streamUrl(feed),
-          httpHeaders: const {'User-Agent': _playerAgent},
-        ),
-        play: true,
-      );
-    } catch (_) {
-      slot.error = 'This feed could not be opened.';
-    } finally {
-      slot.loading = false;
-      if (mounted) setState(() {});
-    }
+    // Queue commands for each native player and discard stale selections. This
+    // prevents rapid dropdown changes from leaving the wrong feed playing.
+    final previousOperation = slot.pendingOperation;
+    final operation = () async {
+      try {
+        await previousOperation;
+      } catch (_) {}
+      if (!mounted || token != slot.requestToken) return;
+      final player = slot.player;
+      if (player == null) return;
+
+      try {
+        await player.stop();
+        if (!mounted || token != slot.requestToken) return;
+        if (feed != null) {
+          await player.open(
+            Media(
+              widget.service.streamUrl(feed),
+              httpHeaders: const {'User-Agent': _playerAgent},
+            ),
+            play: true,
+          );
+        }
+      } catch (_) {
+        if (token == slot.requestToken) {
+          slot.error = 'Could not open this feed. Retry or choose another.';
+          slot.playing = false;
+        }
+      } finally {
+        if (mounted && token == slot.requestToken) {
+          slot.loading = false;
+          setState(() {});
+        }
+      }
+    }();
+    slot.pendingOperation = operation;
+    await operation;
   }
 
   @override
-  Widget build(BuildContext context) => GridView.builder(
-    padding: const EdgeInsets.all(4),
-    physics: const NeverScrollableScrollPhysics(),
-    itemCount: _slots.length,
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2,
-      crossAxisSpacing: 4,
-      mainAxisSpacing: 4,
-      childAspectRatio: 16 / 9,
-    ),
-    itemBuilder: (context, index) => _buildTile(index, _slots[index]),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      final height = constraints.maxHeight;
+      final tileAspectRatio = width > 16 && height > 16 && height.isFinite
+          ? (width - 16) / (height - 16)
+          : 16 / 9;
+      return GridView.builder(
+        padding: const EdgeInsets.all(4),
+        primary: false,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: _slots.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: tileAspectRatio,
+        ),
+        itemBuilder: (context, index) => _buildTile(index, _slots[index]),
+      );
+    },
   );
 
   Widget _buildTile(int index, _PlayerSlot slot) => Container(
     decoration: BoxDecoration(
       color: const Color(0xFF070708),
-      border: Border.all(color: widget.accent.withAlpha(90)),
-      borderRadius: BorderRadius.circular(9),
+      border: Border.all(
+        color: slot.playing
+            ? _green.withAlpha(150)
+            : widget.accent.withAlpha(80),
+      ),
+      borderRadius: BorderRadius.circular(12),
     ),
     clipBehavior: Clip.antiAlias,
     child: Stack(
@@ -1592,81 +1677,40 @@ class _MultiViewPanelState extends State<MultiViewPanel> {
                 Icon(
                   Icons.add_to_queue_rounded,
                   color: widget.accent,
-                  size: 24,
+                  size: 25,
                 ),
-                const SizedBox(height: 7),
+                const SizedBox(height: 8),
                 const Text(
-                  'Choose a feed',
-                  style: TextStyle(color: _muted, fontSize: 10),
+                  'Choose a live feed',
+                  style: TextStyle(color: _text, fontSize: 11),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'Use the menu above',
+                  style: TextStyle(color: _muted, fontSize: 9),
                 ),
               ],
             ),
           ),
-        Positioned(
-          left: 5,
-          right: 5,
-          top: 5,
-          child: Container(
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xCC101114),
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: const Color(0x26FFFFFF)),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  '0${index + 1}',
-                  style: TextStyle(
-                    color: widget.accent,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<LiveFeed?>(
-                      isExpanded: true,
-                      value: slot.feed,
-                      dropdownColor: _surfaceRaised,
-                      style: const TextStyle(color: _text, fontSize: 10),
-                      hint: const Text(
-                        'Select source',
-                        style: TextStyle(color: _muted, fontSize: 10),
-                      ),
-                      items: [
-                        const DropdownMenuItem<LiveFeed?>(
-                          value: null,
-                          child: Text('No feed'),
-                        ),
-                        ...widget.feeds.map(
-                          (feed) => DropdownMenuItem<LiveFeed?>(
-                            value: feed,
-                            child: Text(
-                              feed.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                      onChanged: (feed) => unawaited(_select(index, feed)),
+        if (slot.loading)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 42,
+            bottom: 0,
+            child: IgnorePointer(
+              child: ColoredBox(
+                color: const Color(0x66000000),
+                child: Center(
+                  child: SizedBox(
+                    width: 23,
+                    height: 23,
+                    child: CircularProgressIndicator(
+                      color: widget.accent,
+                      strokeWidth: 2,
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ),
-        if (slot.loading)
-          ColoredBox(
-            color: const Color(0x88000000),
-            child: Center(
-              child: CircularProgressIndicator(
-                color: widget.accent,
-                strokeWidth: 2,
               ),
             ),
           ),
@@ -1675,330 +1719,162 @@ class _MultiViewPanelState extends State<MultiViewPanel> {
             left: 8,
             right: 8,
             bottom: 8,
-            child: Text(
-              slot.error!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFFF87168), fontSize: 9),
-            ),
-          ),
-      ],
-    ),
-  );
-}
-
-class RaceTimesDialog extends StatefulWidget {
-  const RaceTimesDialog({super.key, required this.year});
-
-  final int year;
-
-  @override
-  State<RaceTimesDialog> createState() => _RaceTimesDialogState();
-}
-
-class _RaceTimesDialogState extends State<RaceTimesDialog> {
-  late final RaceScheduleService _service;
-  late final Future<List<RaceWeekend>> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _service = RaceScheduleService();
-    _future = _service.loadSeason(widget.year);
-  }
-
-  @override
-  void dispose() {
-    _service.dispose();
-    super.dispose();
-  }
-
-  String _time(DateTime date) {
-    final local = date.toLocal();
-    final day = local.day.toString().padLeft(2, '0');
-    const months = [
-      'JAN',
-      'FEB',
-      'MAR',
-      'APR',
-      'MAY',
-      'JUN',
-      'JUL',
-      'AUG',
-      'SEP',
-      'OCT',
-      'NOV',
-      'DEC',
-    ];
-    final hour = local.hour.toString().padLeft(2, '0');
-    final minute = local.minute.toString().padLeft(2, '0');
-    return '$day ${months[local.month - 1]} · $hour:$minute';
-  }
-
-  @override
-  Widget build(BuildContext context) => Dialog(
-    backgroundColor: const Color(0xFF141519),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(18),
-      side: const BorderSide(color: Color(0x2EFFFFFF)),
-    ),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 680, maxHeight: 760),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _Eyebrow('SEASON ${AppConfig.season}'),
-                      SizedBox(height: 5),
-                      Text(
-                        'Race Times',
-                        style: TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Times are shown in your local timezone.',
-              style: TextStyle(color: _muted, fontSize: 11),
-            ),
-            const SizedBox(height: 13),
-            Expanded(
-              child: FutureBuilder<List<RaceWeekend>>(
-                future: _future,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return const _EmptyState(
-                      icon: Icons.cloud_off_rounded,
-                      title: 'Race times unavailable',
-                      message: 'The schedule service could not be reached.',
-                      accent: _f1Red,
-                    );
-                  }
-                  final weekends = snapshot.data ?? const <RaceWeekend>[];
-                  if (weekends.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'No race schedule was returned.',
-                        style: TextStyle(color: _muted),
-                      ),
-                    );
-                  }
-                  final now = DateTime.now().toUtc();
-                  final upcoming = weekends.where(
-                    (weekend) => weekend.sessions.last.start.isAfter(
-                      now.subtract(const Duration(hours: 4)),
-                    ),
-                  );
-                  final display = upcoming.isEmpty
-                      ? weekends.reversed.take(3).toList()
-                      : upcoming.toList();
-                  return ListView.separated(
-                    itemCount: display.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 9),
-                    itemBuilder: (context, index) {
-                      final weekend = display.elementAt(index);
-                      return Container(
-                        padding: const EdgeInsets.all(13),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1B1C21),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0x20FFFFFF)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0x22E10600),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    'R${weekend.round}',
-                                    style: const TextStyle(
-                                      color: _f1Red,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 9),
-                                Expanded(
-                                  child: Text(
-                                    weekend.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: _text,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (weekend.locality.isNotEmpty ||
-                                weekend.country.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                '${weekend.locality}${weekend.locality.isNotEmpty && weekend.country.isNotEmpty ? ', ' : ''}${weekend.country}',
-                                style: const TextStyle(
-                                  color: _muted,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 9),
-                            for (final session in weekend.sessions)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 3,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        session.name,
-                                        style: const TextStyle(
-                                          color: _muted,
-                                          fontSize: 10,
-                                        ),
-                                      ),
-                                    ),
-                                    Text(
-                                      _time(session.start),
-                                      style: const TextStyle(
-                                        color: _text,
-                                        fontSize: 10,
-                                        fontFamily: 'Consolas',
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0xE6101114),
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: const Color(0x55F87168)),
               ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _LiveryDialog extends StatelessWidget {
-  const _LiveryDialog({required this.current});
-
-  final Color current;
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    backgroundColor: const Color(0xFF17181C),
-    title: const Text('Choose your livery'),
-    content: SizedBox(
-      width: 420,
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final option in _teamColors)
-            InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => Navigator.of(context).pop(option),
-              child: Container(
-                width: 124,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF222329),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: current.toARGB32() == option.color.toARGB32()
-                        ? option.color
-                        : const Color(0x22FFFFFF),
-                    width: current.toARGB32() == option.color.toARGB32()
-                        ? 1.5
-                        : 1,
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    color: Color(0xFFF87168),
+                    size: 15,
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 15,
-                      height: 15,
-                      decoration: BoxDecoration(
-                        color: option.color,
-                        shape: BoxShape.circle,
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      slot.error!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _text,
+                        fontSize: 9,
+                        height: 1.25,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        option.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 10),
+                  ),
+                  if (slot.feed != null) ...[
+                    const SizedBox(width: 5),
+                    IconButton(
+                      tooltip: 'Retry feed',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => unawaited(_select(index, slot.feed)),
+                      icon: const Icon(
+                        Icons.refresh_rounded,
+                        color: _text,
+                        size: 16,
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
             ),
-        ],
-      ),
+          ),
+        Positioned(
+          left: 7,
+          right: 7,
+          top: 7,
+          child: Container(
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xE6101114),
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(color: const Color(0x2EFFFFFF)),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  '0${index + 1}',
+                  style: TextStyle(
+                    color: widget.accent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<LiveFeed?>(
+                      isExpanded: true,
+                      isDense: true,
+                      menuMaxHeight: 360,
+                      value: slot.feed,
+                      dropdownColor: _surfaceRaised,
+                      style: const TextStyle(color: _text, fontSize: 10),
+                      icon: const Icon(
+                        Icons.expand_more_rounded,
+                        color: _muted,
+                        size: 17,
+                      ),
+                      hint: const Text(
+                        'Select feed',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: _muted, fontSize: 10),
+                      ),
+                      items: [
+                        const DropdownMenuItem<LiveFeed?>(
+                          value: null,
+                          child: Text('Clear tile'),
+                        ),
+                        ...widget.feeds.map(
+                          (feed) => DropdownMenuItem<LiveFeed?>(
+                            value: feed,
+                            enabled: !_isUsedElsewhere(index, feed),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    feed.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 7),
+                                const _LiveStreamBadge(compact: true),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (feed) => unawaited(_select(index, feed)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 7),
+                _SlotStatusBadge(
+                  label: slot.playing
+                      ? 'LIVE'
+                      : slot.error != null
+                      ? 'ERROR'
+                      : slot.loading
+                      ? 'LOADING'
+                      : slot.feed == null
+                      ? 'EMPTY'
+                      : 'READY',
+                  color: slot.playing
+                      ? _green
+                      : slot.error != null
+                      ? const Color(0xFFF87168)
+                      : slot.loading
+                      ? const Color(0xFFFFB020)
+                      : _muted,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Close'),
-      ),
-    ],
   );
 }
 
 class _PlayerSlot {
   Player? player;
   VideoController? controller;
+  StreamSubscription<bool>? playingSubscription;
+  StreamSubscription<String>? errorSubscription;
   LiveFeed? feed;
   String? error;
   bool loading = false;
-}
-
-class _LiveryOption {
-  const _LiveryOption(this.name, this.color);
-
-  final String name;
-  final Color color;
+  bool playing = false;
+  int requestToken = 0;
+  Future<void> pendingOperation = Future<void>.value();
 }
 
 class _ExitTheaterIntent extends Intent {
@@ -2164,7 +2040,7 @@ class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color accent;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool selected;
 
   @override
@@ -2220,6 +2096,77 @@ class _StatusPill extends StatelessWidget {
   );
 }
 
+class _LiveStreamBadge extends StatelessWidget {
+  const _LiveStreamBadge({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Live stream',
+    child: Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 5 : 7,
+        vertical: compact ? 3 : 4,
+      ),
+      decoration: BoxDecoration(
+        color: _green.withAlpha(24),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _green.withAlpha(105)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: compact ? 5 : 6,
+            height: compact ? 5 : 6,
+            decoration: const BoxDecoration(
+              color: _green,
+              shape: BoxShape.circle,
+            ),
+          ),
+          SizedBox(width: compact ? 4 : 5),
+          Text(
+            'LIVE',
+            style: TextStyle(
+              color: _green,
+              fontSize: compact ? 7 : 8,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.55,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _SlotStatusBadge extends StatelessWidget {
+  const _SlotStatusBadge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withAlpha(22),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withAlpha(80)),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: color,
+        fontSize: 7,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 0.45,
+      ),
+    ),
+  );
+}
+
 class _LiveBadge extends StatelessWidget {
   const _LiveBadge({
     required this.label,
@@ -2232,31 +2179,38 @@ class _LiveBadge extends StatelessWidget {
   final Color accent;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: active ? accent.withAlpha(35) : const Color(0x14FFFFFF),
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(
-        color: active ? accent.withAlpha(95) : const Color(0x20FFFFFF),
-      ),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (active) ...[_TinyDot(color: accent), const SizedBox(width: 5)],
-        Text(
-          label,
-          style: TextStyle(
-            color: active ? const Color(0xFFFFAAA5) : _muted,
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.65,
-          ),
+  Widget build(BuildContext context) {
+    final color = label == 'LIVE'
+        ? _green
+        : active
+        ? accent
+        : _muted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: active ? color.withAlpha(30) : const Color(0x14FFFFFF),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: active ? color.withAlpha(95) : const Color(0x20FFFFFF),
         ),
-      ],
-    ),
-  );
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (active) ...[_TinyDot(color: color), const SizedBox(width: 5)],
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.65,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _CountPill extends StatelessWidget {

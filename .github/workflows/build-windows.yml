@@ -19,6 +19,29 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Locate FreeF1 Flutter project
+        id: project
+        shell: pwsh
+        run: |
+          $candidates = @(
+            @{ Directory = '.'; Manifest = (Join-Path $env:GITHUB_WORKSPACE 'pubspec.yaml') },
+            @{ Directory = 'freef1_cockpit_flutter'; Manifest = (Join-Path $env:GITHUB_WORKSPACE 'freef1_cockpit_flutter\pubspec.yaml') }
+          )
+          $projectDirectory = $null
+          foreach ($candidate in $candidates) {
+            if (-not (Test-Path $candidate.Manifest)) { continue }
+            $manifest = Get-Content $candidate.Manifest -Raw
+            if ($manifest -match '(?m)^name:\s*freef1_cockpit\s*$') {
+              $projectDirectory = $candidate.Directory
+              break
+            }
+          }
+          if ($null -eq $projectDirectory) {
+            throw 'Could not find the FreeF1 pubspec.yaml at the repository root or in freef1_cockpit_flutter/. Make sure the project files were copied into the repository.'
+          }
+          "directory=$projectDirectory" >> $env:GITHUB_OUTPUT
+          Write-Host "Using FreeF1 project directory: $projectDirectory"
+
       - name: Verify portal build secrets
         shell: pwsh
         env:
@@ -29,10 +52,12 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:PORTAL_PASSWORD)) { throw 'Add PORTAL_PASSWORD in repository Actions secrets.' }
 
       - name: Generate the Windows runner
+        working-directory: ${{ steps.project.outputs.directory }}
         run: flutter create --platforms=windows --project-name freef1_cockpit .
 
       - name: Remove generated Flutter counter test
         shell: pwsh
+        working-directory: ${{ steps.project.outputs.directory }}
         run: |
           $sampleTest = 'test/widget_test.dart'
           if (Test-Path $sampleTest) {
@@ -43,16 +68,20 @@ jobs:
           }
 
       - name: Resolve Flutter packages
+        working-directory: ${{ steps.project.outputs.directory }}
         run: flutter pub get
 
       - name: Analyze Dart source
+        working-directory: ${{ steps.project.outputs.directory }}
         run: flutter analyze
 
       - name: Run unit tests
+        working-directory: ${{ steps.project.outputs.directory }}
         run: flutter test
 
       - name: Build Windows release
         shell: pwsh
+        working-directory: ${{ steps.project.outputs.directory }}
         env:
           PORTAL_USERNAME: ${{ secrets.PORTAL_USERNAME }}
           PORTAL_PASSWORD: ${{ secrets.PORTAL_PASSWORD }}
@@ -62,6 +91,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: FreeF1-Cockpit-Windows-x64
-          path: build/windows/x64/runner/Release/
+          path: ${{ steps.project.outputs.directory }}/build/windows/x64/runner/Release/
           if-no-files-found: error
           compression-level: 0
